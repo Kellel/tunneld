@@ -1,0 +1,35 @@
+.\" Manpage for tunneld.
+.\" Contact kellen@cablespeed.com to correct errors or typos.
+.TH man 8 "16 March 2014" "1.0" "tunneld man page"
+.SH NAME
+tunneld \- manage remote tunnels
+.SH SYNOPSIS
+tunneld -f config_file [-d]
+.SH DESCRIPTION
+tunneld is a simple daemon for managing ssh tunnels. It is configurable using a simple format.
+
+Username is a required variable. This is the user that tunneld will create the connections as.
+
+    username=username
+
+Commands is a required variable that lists all the commands you would like to enable.
+
+    commands=[cmd1, cmd2]
+
+Each enabled command must be defined as such:
+
+    cmd1=["/usr/bin/ssh", "-L", "8000:localhost:8000", "example.com"]
+    cmd2=["/bin/sleep", "10"]
+
+While this program was designed to run ssh tunnels, you can run any command from the daemon. 
+Each command is setup with an exponential backoff. This works well for ssh tunnels, but not so well for other things.
+.SH OPTIONS
+Usage: tunneld -f config_file [-d]
+ -f  config_file        configuration file
+ -d                     daemonize
+.SH SEE ALSO
+ssh(1)
+.SH BUGS
+When running multiple cmds the exponential backoff is oddly forced apon the other process.
+.SH AUTHOR
+Kellen Fox (kellen@cablespeed.com)

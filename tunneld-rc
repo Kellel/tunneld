@@ -1,0 +1,30 @@
+#!/bin/sh
+
+# $FreeBSD$
+#
+# PROVIDE: tunneld
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf.local or /etc/rc.conf
+# to enable this service:
+#
+# conman_enable (bool): Set to NO be default
+#                       Set it to YES to enable conman.
+
+. /etc/rc.subr
+
+name=tunneld
+rcvar=tunneld_enable
+
+load_rc_config ${name}
+
+: ${tunneld_enable:=no}
+: ${tunneld_config="/usr/local/etc/${name}.cfg"}
+
+command="/home/tunnel/bin/${name}"
+pidfile=/var/run/${name}.pid
+
+command_args="-f $tunneld_config -d"
+
+run_rc_command "$1"
