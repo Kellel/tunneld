@@ -19,6 +19,8 @@
 #include <string.h>
 #include <stdlib.h> 
 
+#include "arg_parse.h"
+
 #define DAEMON_USER "tunnel"
 #define MAX_ARG_SIZE 15
 
@@ -26,7 +28,7 @@ typedef struct command_t {
     int pid;
     int timeout;
     char * name;
-    char* args[MAX_ARG_SIZE];
+    char ** args;
 } command_t;
 
 int command_len;
@@ -37,7 +39,7 @@ void usage();
 struct pidfh *pfh;
 void signal_handler(int sig);
 int setuids(const char * username);
-int connection(const char * username, char ** vars);
+int connection(const char * username, char ** vars, int stuid);
 
 int
 main (int argc, char ** argv)
@@ -46,14 +48,15 @@ main (int argc, char ** argv)
     int i;
     int status;
     int daemonize = 0;
+    int command_len = 0;
     const char * username = "tunnel";
-    char * default_file = NULL;
+    commands = (command_t *) malloc (sizeof (command_t) * MAX_ARG_SIZE);
 
     for (i = 1; i < argc; i++)
     {
-        if (strcmp(argv[i], "-f") == 0) 
+        if (strcmp(argv[i], "-c") == 0) 
         {
-            default_file = argv[++i];
+            int parts = arg_parse(argv[++i], &commands[command_len++].args);
         }
         else if (strcmp(argv[i], "-d") == 0)
         {
@@ -64,12 +67,6 @@ main (int argc, char ** argv)
             usage();
             return (EXIT_FAILURE);
         }
-    }
-
-    if (default_file == NULL)
-    {
-        usage();
-        return (EXIT_FAILURE);
     }
 
     pid_t otherpid;
@@ -95,75 +92,8 @@ main (int argc, char ** argv)
         pidfile_write(pfh);
     }
 
-    config_t config;
-    config_setting_t *setting;
-    int max_command_len = 10;
-    int count = 0;
-
-    commands = (command_t *) malloc(sizeof(command_t) * max_command_len);
-
-    if (commands == NULL)
-    {
-        perror("malloc");
-    }
-
-    config_init(&config);
-
-
-    if (! config_read_file(&config, default_file))
-    {
-        fprintf(stderr, "%s:%d - %s\n", config_error_file(&config), config_error_line(&config), config_error_text(&config));
-        config_destroy(&config);
-        return (EXIT_FAILURE);
-    }
-
-    if (config_lookup_string(&config, "username", &username))
-    {
-    }
-    else
-    {
-        fprintf(stderr, "No 'username' setting in configuration file.\n");
-        config_destroy(&config);
-        return (EXIT_FAILURE);
-    }
-
-    setting = config_lookup(&config, "commands");
-    if (setting != NULL)
-    {
-        count = config_setting_length(setting);
-        int imax = MIN(count, max_command_len);
-        int i;
-        for (i = 0; i< imax; i++)
-        {
-            commands[i].name = (char *) config_setting_get_string_elem(setting, i);
-            commands[i].timeout = 0;
-            config_setting_t * command;
-            command = config_lookup(&config, commands[i].name);
-            if (command != NULL)
-            {
-                int jcount = config_setting_length(command);
-                int jmax = MIN(jcount, MAX_ARG_SIZE);
-                int j;
-                for (j = 0; j < jmax; j++)
-                {
-                    commands[i].args[j] = (char *) config_setting_get_string_elem(command, j);
-                }
-            }
-
-        }
-
-    }
-
-    config_destroy(&config);
-    config_destroy(&config);
-    command_len = count;
-    if (command_len < 0)
-    {
-        printf("Config Error\n");
-        exit(EXIT_FAILURE);
-    }
-
     syslog(LOG_DEBUG, "Spawning Connections. %i", command_len);
+    
 
     for (i = 0; i < command_len; i++)
     {
@@ -181,7 +111,8 @@ main (int argc, char ** argv)
         if (cpid == 0)
         {        
             syslog(LOG_DEBUG, "Beginning Connection");
-            connection(DAEMON_USER, (char **) commands[i].args);
+            signal(SIGCHLD, SIG_IGN);
+            connection(DAEMON_USER, (char **) commands[i].args, daemonize);
             syslog(LOG_DEBUG, "Failed to Exec");
             exit(127);
         }
@@ -218,6 +149,7 @@ main (int argc, char ** argv)
                 // Error State
                 if (cpid < 0)
                 {
+                    perror("Fork!!");
                     syslog(LOG_CRIT, "Failed to fork!");
                     break;
                 }
@@ -227,7 +159,7 @@ main (int argc, char ** argv)
                 {        
                     signal(SIGTERM, signal_handler);
                     syslog(LOG_DEBUG, "Beginning Connection");
-                    connection(DAEMON_USER, (char **) commands[i].args);
+                    connection(DAEMON_USER, (char **) commands[i].args, daemonize);
                     syslog(LOG_DEBUG, "Failed to Exec");
                     exit(127);
                 }
@@ -240,9 +172,9 @@ main (int argc, char ** argv)
         }
     }
     
-    syslog(LOG_ERR, "Daemon Exiting");
+    syslog(LOG_ERR, "Daemon Exiting1");
     cleanup();
-    syslog(LOG_DEBUG, "Daemon Exiting");
+    syslog(LOG_DEBUG, "Daemon Exiting2");
     pidfile_remove(pfh);
     free (commands);
     return 0;
@@ -250,9 +182,9 @@ main (int argc, char ** argv)
 
 void usage()
 {
-    printf("Usage: tunneld -f config_file [-d] \n");
-    printf(" -f  config_file        specify a config file\n");
-    printf(" -d                     daemonize\n");
+    printf("Usage: tunneld -c COMM [-d] \n");
+    printf(" -c COMM      specify a command to run\n");
+    printf(" -d           daemonize\n");
 }
 
 int cleanup()
@@ -264,14 +196,15 @@ int cleanup()
     return 0;
 }
 
-int connection(const char * username, char ** vars)
+
+int connection(const char * username, char ** vars, int stuid)
 {
 
-
-    if (setuids(username) < 0) {
-        return 1;
+    if (stuid){
+        if (setuids(username) < 0) {
+            return 1;
+        }
     }
-
     
     int devNull = open("/dev/null", O_WRONLY);
 

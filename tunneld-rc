@@ -9,8 +9,8 @@
 # Add the following lines to /etc/rc.conf.local or /etc/rc.conf
 # to enable this service:
 #
-# conman_enable (bool): Set to NO be default
-#                       Set it to YES to enable conman.
+# tunneld_enable (bool): Set to NO be default
+#                       Set it to YES to enable tunneld.
 
 . /etc/rc.subr
 
@@ -20,11 +20,12 @@ rcvar=tunneld_enable
 load_rc_config ${name}
 
 : ${tunneld_enable:=no}
-: ${tunneld_config="/usr/local/etc/${name}.cfg"}
 
 command="/home/tunnel/bin/${name}"
 pidfile=/var/run/${name}.pid
 
-command_args="-f $tunneld_config -d"
+tunnel_1="/bin/sh -c \\\"sleep 10; touch /tmp/11101\\\""
+command_args="-d -c \"${tunnel_1}\""
+echo $command_args
 
 run_rc_command "$1"
